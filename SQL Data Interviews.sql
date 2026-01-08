@@ -1,5 +1,42 @@
--- select * from dbo.Departments;
--- select * from dbo.Employees;
+CREATE TABLE Departments (
+    DeptID INT PRIMARY KEY,
+    DeptName VARCHAR(50)
+);
+
+CREATE TABLE Employees (
+    EmpID INT PRIMARY KEY,
+    EmpName VARCHAR(50),
+    Salary INT,
+    DeptID INT,
+    FOREIGN KEY (DeptID) REFERENCES Departments(DeptID)
+);
+
+INSERT INTO Departments (DeptID, DeptName) VALUES
+(1, 'HR'),
+(2, 'IT'),
+(3, 'Finance'),
+(4, 'Sales');
+
+INSERT INTO Employees (EmpID, EmpName, Salary, DeptID) VALUES
+(101, 'Alice',   90000, 2),
+(102, 'Bob',     85000, 2),
+(103, 'Charlie', 80000, 2),
+(104, 'David',   75000, 2),
+
+(105, 'Eva',     70000, 1),
+(106, 'Frank',   65000, 1),
+(107, 'Grace',   60000, 1),
+
+(108, 'Hannah',  95000, 3),
+(109, 'Ian',     90000, 3),
+(110, 'Jack',    85000, 3),
+
+(111, 'Kevin',   72000, 4),
+(112, 'Laura',   68000, 4),
+(113, 'Mike',    64000, 4);
+
+select * from dbo.Departments;
+select * from dbo.Employees;
 
 -- Question 1: different ways to find second highest salary
 -- Option 1: row_number() and dense_rank()
@@ -68,3 +105,4 @@ ROW_NUMBER() OVER (ORDER BY Salary DESC) AS rn
 FROM Employees
 ) t
 WHERE rn BETWEEN 3 AND 5;
+
