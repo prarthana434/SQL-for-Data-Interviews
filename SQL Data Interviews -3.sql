@@ -18,7 +18,18 @@ INSERT INTO fare_table (from_city, to_city, fare) VALUES
 ('Mumbai', 'Chennai', 1800),
 ('Chennai', 'Mumbai', 1750);
 
+-- select * from dbo.fare_table;
+-- minimum two way price
+SELECT
+GREATEST(from_city, to_city) AS to_city,
+LEAST(from_city, to_city) AS from_city,
+MIN(fare) AS first_fare
+FROM dbo.fare_table
+GROUP BY
+GREATEST(from_city, to_city),
+LEAST(from_city, to_city)
 
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------    
 
 CREATE TABLE product_price (
     product_id varchar(50),
@@ -39,17 +50,6 @@ INSERT INTO product_price (product_id, price, price_date) VALUES
 ('P4', 400.00, '2024-01-01'),
 ('P4', 400.00, '2024-02-01'),
 ('P4', 420.00, '2024-03-01');
-
--- select * from dbo.fare_table;
--- minimum two way price
-SELECT
-GREATEST(from_city, to_city) AS to_city,
-LEAST(from_city, to_city) AS from_city,
-MIN(fare) AS first_fare
-FROM dbo.fare_table
-GROUP BY
-GREATEST(from_city, to_city),
-LEAST(from_city, to_city)
 
 -- products whose price has always increased
 select * from dbo.product_price
@@ -76,4 +76,3 @@ and price_status <> 'no change'
 group by product_id
 having count(distinct price_status) = 1
 and max(price_status) = 'increased'
-
