@@ -1,67 +1,148 @@
--- Namastekart, an e-commerce company, has observed a notable surge in return orders recently. 
--- They suspect that a specific group of customers may be responsible for a significant portion of these returns. 
--- To address this issue, their initial goal is to identify customers who have returned more than 50% of their orders. 
--- This way, they can proactively reach out to these customers to gather feedback. 
--- Write an SQL to find list of customers along with their return percent (Round to 2 decimal places), 
--- display the output in ascending order of customer name.
+-- Find users active for 3+ consecutive days.
 
-SELECT 
-customer_name,
-ROUND(SUM(CASE WHEN return_flag = 'return' THEN 1 ELSE 0 END) * 100.0 / COUNT(*),2) AS return_percent
-FROM (
-SELECT 
-o.order_id,
-o.customer_name,
-CASE WHEN r.return_date IS NOT NULL THEN 'return'
-ELSE 'not return'
-END AS return_flag
-FROM orders o
-LEFT JOIN returns r
-ON o.order_id = r.order_id
-) a
-GROUP BY customer_name
-HAVING 
-SUM(CASE WHEN return_flag = 'return' THEN 1 ELSE 0 END) * 1.0 / COUNT(*) > 0.5
-ORDER BY customer_name;
-
--- You are given a products table where a new row is inserted every time the price of a product changes. 
--- Additionally, there is a transaction table containing details such as order_date and product_id for each order. 
--- Write an SQL query to calculate the total sales value for each product, 
--- considering the cost of the product at the time of the order date, display the output in ascending order of the product_id.
-
-SELECT 
-product_id,
-SUM(price) AS total_sales
-FROM (
-SELECT 
-o.order_id,
-o.product_id,
-p.price,
-ROW_NUMBER() OVER (PARTITION BY o.order_id ORDER BY p.price_date DESC) AS rn
-FROM orders o
-JOIN products p
-ON p.product_id = o.product_id
-AND p.price_date <= o.order_date
-) t
-WHERE rn = 1
-GROUP BY product_id
-ORDER BY product_id;
-
--- You’re working for a large financial institution that provides various types of loans to customers. 
--- Your task is to analyze loan repayment data to assess credit risk and improve risk management strategies. 
--- Write an SQL to create 2 flags for each loan as per below rules. Display loan id, loan amount , due date and the 2 flags.
--- 1- fully_paid_flag: 1 if the loan was fully repaid irrespective of payment date else it should be 0. 
--- 2- on_time_flag : 1 if the loan was fully repaid on or before due date else 0.
-
-with master_table as (
-select l.loan_id, l.customer_id, l.loan_amount, l.due_date, 
-p.payment_id, p.payment_date, p.amount_paid 
-from loans l 
-left join payments p on 
-p.loan_id = l.loan_id
+WITH distinct_logins AS (
+    SELECT DISTINCT user_id, activity_date
+    FROM user_activity
+),
+ranked_logins AS (
+    SELECT 
+        user_id, 
+        activity_date,
+        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY activity_date) as rn
+    FROM distinct_logins
+),
+islands AS (
+    SELECT 
+        user_id,
+        activity_date,
+        date(activity_date, '-' || (rn - 1) || ' days') as anchor_date
+    FROM ranked_logins
 )
-select loan_id, sum(loan_amount) as loan_amount, due_date
-case when sum(loan_amount) = sum(due_date) then '1' else '0' end as fully_paid_flag,
-case when payment_date <= due_date then '1' else '0' end as on_time_flag 
-from master_table
-group by loan_id, due_date, payment_date
+SELECT user_id, COUNT(*) as streak_length
+FROM islands
+GROUP BY user_id, anchor_date
+HAVING COUNT(*) >= 3;
+
+-- Month-over-month revenue growth rate.
+
+with r1 as (
+SELECT CAST(strftime('%m', order_date) AS INTEGER) as order_month,
+sum(amount) as amt
+from orders
+group by order_month
+order by order_month
+  ), r2 as (
+select order_month, amt,
+lag(amt,1) over(order by order_month) as last_amt
+from r1
+    )
+    select *, (amt - last_amt) * 100 / last_amt as gr from r2
+
+-- User with highest friend request acceptance rate (min 2 sent).
+
+SELECT sender_id, 
+count(distinct receiver_id) as requests_sent,
+sum(case when status = 'accepted' then 1 else 0 end) accepted,
+(100 * sum(case when status = 'accepted' then 1 else 0 end)) / count(distinct receiver_id) as rate
+from friend_requests
+group by sender_id
+having count(distinct receiver_id) > 1
+order by rate desc
+limit 1
+
+-- Average days between orders per user.
+
+select user_id,
+coalesce(avg(julianday(order_date) - julianday(prev_date)),0) AS days_diff
+from (
+SELECT user_id, 
+order_date,
+lag(order_date,1) over(partition by user_id order by order_date) as prev_date
+from orders
+group by user_id, order_date
+  ) a 
+group by user_id
+
+-- Users with orders but no friend requests sent.
+
+SELECT distinct user_id from orders 
+where user_id not in (
+  select distinct receiver_id from friend_requests
+  ) 
+
+-- Find the first order date and amount for each user.
+
+select user_id, order_date, amount
+from (
+SELECT *, 
+row_number() over(partition by user_id order by order_date) as rn
+from orders
+  ) a 
+where rn = 1 
+
+-- Find users whose average order amount exceeds the overall average.
+
+select user_id from (
+SELECT
+user_id,
+round(avg(amount),2) as user_avg,
+round(avg(amount) over(),2) as over_all_avg
+from orders
+group by user_id
+) a 
+where user_avg > over_all_avg
+
+-- Rank users by total spend within each country.
+
+SELECT o.user_id, 
+u.country, 
+round(sum(o.amount),2) as amount,
+dense_rank() over(partition by u.country order by sum(o.amount) desc) as drnk
+from orders o 
+inner join users u on 
+u.user_id = o.user_id
+group by u.country, o.user_id
+
+-- Find the percentage of total revenue each product contributes.
+
+WITH product_totals AS (
+    SELECT
+        product_id,
+        SUM(amount) AS prod_amt
+    FROM orders
+    GROUP BY product_id
+)
+SELECT
+    product_id,
+    ROUND(prod_amt, 2) AS prod_amt,
+    ROUND(SUM(prod_amt) OVER (), 2) AS total_sales,
+    ROUND(prod_amt * 100.0 / SUM(prod_amt) OVER (), 2) AS percentage_of_revenue
+FROM product_totals;
+
+-- Users with 2nd purchase within 30 days
+
+with u1 as (
+select 
+user_id,
+order_date,
+row_number() over(partition by user_id order by order_date) as rnk
+from orders
+), u2 as (
+select distinct user_id,
+max(case when rnk = 1 then order_date end) as first_order_date,
+max(case when rnk = 2 then order_date end) as second_order_date 
+from u1
+group by user_id
+)
+select *, julianday(second_order_date) - julianday(first_order_date) as days_diff
+from u2
+where julianday(second_order_date) - julianday(first_order_date) <= 30 and second_order_date is not null
+
+-- Calculate a 2-order moving average of revenue per order.
+
+select 
+order_id, 
+order_date, 
+amount, 
+round(avg(amount) over(order by order_date, order_id rows between 1 preceding and current row),2) moving_average
+from orders
