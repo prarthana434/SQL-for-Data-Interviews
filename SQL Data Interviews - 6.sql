@@ -1,23 +1,30 @@
 -- month over month return rate
 
-with r1 as (
-select date_format(order_date, '%Y-%m') as year_month,
-case when return_date is not null then 1 else 0 end as return_flag
-from returns
-group by year_month, return_flag
-), r2 as (
-select year_month,
-sum(return_flag) as returns
-from r1 
-group by year_month
-order by year_month
+with monthly_stats as (
+    select 
+        date_format(order_date, '%Y-%m') as year_month,
+        count(*) as total_orders,
+        sum(case when return_date is not null then 1 else 0 end) as return_count
+    from returns
+    group by 1
+),
+calculations as (
+    select 
+        year_month,
+        return_count,
+        total_orders,
+        (return_count / total_orders) * 100 as current_month_return_rate
+    from monthly_stats
 )
-select year_month,
-returns,
-lag(returns,1) over(order by year_month) as last_month_returns
-ifnull((returns / lag(returns,1) over(order by year_month)),0) * 100 as return rate
-from r2 
-
+select 
+    year_month,
+    return_count,
+    current_month_return_rate,
+    lag(current_month_return_rate, 1) over (order by year_month) as prev_month_return_rate,
+    current_month_return_rate - lag(current_month_return_rate, 1) over (order by year_month) as rate_diff
+from calculations
+order by year_month
+  
 -- most common action per user
 
 with a1 as (
@@ -55,4 +62,5 @@ sum(revenue) as sales,
 row_number() over(partition by extract(month from order_date) order by sum(revenue) desc) as rn 
 from sales
 )
+
 where rn = 1  
